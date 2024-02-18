@@ -5,8 +5,9 @@ NODE_RANK=${NODE_RANK:-0}
 PORT=${PORT:-29500}
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 
-PYTHONPATH="$(dirname $0)/..":"$(dirname $0)/../stable-diffusion":$PYTHONPATH \
-python3 -m torch.distributed.launch \
+export PYTHONPATH="$(dirname $0)/..":"$(dirname $0)/../stable-diffusion":$PYTHONPATH \
+
+/home/yudzheltovskaya/.conda/envs/vpd/bin/python -m torch.distributed.launch \
     --nnodes=$NNODES \
     --node_rank=$NODE_RANK \
     --master_addr=$MASTER_ADDR \

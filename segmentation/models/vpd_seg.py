@@ -38,8 +38,9 @@ class VPDSeg(BaseSegmentor):
                  init_cfg=None,
                  **args):
         super().__init__(init_cfg)
-        config = OmegaConf.load('../stable-diffusion/configs/stable-diffusion/v1-inference.yaml')
-        config.model.params.ckpt_path = f'../{sd_path}'
+        config = OmegaConf.load('stable-diffusion/configs/stable-diffusion/v1-inference.yaml')
+        # config.model.params.ckpt_path = f'../{sd_path}'
+        config.model.params.ckpt_path = sd_path
         config.model.params.cond_stage_config.target = 'ldm.modules.encoders.modules.AbstractEncoder'
 
         # prepare the unet        

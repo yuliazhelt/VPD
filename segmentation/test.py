@@ -1,10 +1,13 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import argparse
+import sys
 import os
+import argparse
+from datetime import datetime
 import os.path as osp
 import shutil
 import time
 import warnings
+import wandb
 
 import mmcv
 import torch
@@ -14,11 +17,13 @@ from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
 from mmcv.utils import DictAction
 
 from mmseg import digit_version
-from mmseg.apis import multi_gpu_test, single_gpu_test
+from mmseg.apis import multi_gpu_test, single_gpu_test, inference_segmentor, init_segmentor, show_result_pyplot
 from mmseg.datasets import build_dataloader, build_dataset
 from mmseg.models import build_segmentor
 from mmseg.utils import build_ddp, build_dp, get_device, setup_multi_processes
+
 import models
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -116,6 +121,7 @@ def parse_args():
 
 
 def main():
+
     args = parse_args()
     assert args.out or args.eval or args.format_only or args.show \
         or args.show_dir, \
@@ -132,6 +138,12 @@ def main():
     cfg = mmcv.Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+
+    run_name = f"{cfg.model.type}_dist_test_{datetime.now().strftime('%H-%M-%S_%Y-%m-%d')}"
+    # Initialize the wandb run with the dynamic name and project name
+    wandb.init(project='thesis_vpd', name=run_name, config=cfg)
+    # Optionally, if you want to log the entire cfg as a single nested property for easier browsing
+    wandb.config.update({"full_config": dict(cfg)})
 
     # set multi-process settings
     setup_multi_processes(cfg)
@@ -289,6 +301,24 @@ def main():
             cfg.device,
             device_ids=[int(os.environ['LOCAL_RANK'])],
             broadcast_buffers=False)
+
+        model.cfg = cfg
+
+        # log to wandb      
+        with torch.no_grad():
+            for i, batch in enumerate(data_loader):
+                # batch_size=1, log 30 images
+                if i > 30:
+                    break
+                img_metas = batch['img_metas'][0].data[0]
+                filename = img_metas[0]['filename']
+
+                img = mmcv.imread(filename)
+                result = inference_segmentor(model, img)
+                show_result_pyplot(model, img, result, out_file=f'val_{i}.png')
+                # Log the saved image to wandb
+                wandb.log({"Segmentation Result": [wandb.Image(f'val_{i}.png', caption=f"result_{filename.split('/')[-1]}")]})
+
         results = multi_gpu_test(
             model,
             data_loader,
@@ -317,6 +347,29 @@ def main():
             if tmpdir is not None and eval_on_format_results:
                 # remove tmp dir when cityscapes evaluation
                 shutil.rmtree(tmpdir)
+
+            per_class_columns = ['Class', 'IoU', 'Acc']
+            per_class_data = []
+
+            for key, value in metric_dict['metric'].items():
+                if key.startswith('IoU.'):
+                    class_name = key[4:]  # Remove 'IoU.' prefix
+                    iou = value
+                    acc = metric_dict['metric'].get(f'Acc.{class_name}', None)
+                    per_class_data.append([class_name, iou * 100, acc * 100])  # Convert fractions to percentages
+
+            per_class_table = wandb.Table(columns=per_class_columns, data=per_class_data)
+            wandb.log({"Per-Class Results": per_class_table})
+
+            wandb_columns = ['Metric', 'Value']
+            wandb_data = [
+                ['aAcc', metric_dict['metric']['aAcc'] * 100],  # Convert fractions to percentages
+                ['mIoU', metric_dict['metric']['mIoU'] * 100],
+                ['mAcc', metric_dict['metric']['mAcc'] * 100]
+            ]
+
+            wandb_table = wandb.Table(columns=wandb_columns, data=wandb_data)
+            wandb.log({"Summary Metrics": wandb_table})
 
 
 if __name__ == '__main__':

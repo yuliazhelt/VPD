@@ -5,7 +5,8 @@ _base_ = [
 
 model = dict(
     type='VPDSeg',
-    sd_path='checkpoints/v1-5-pruned-emaonly.ckpt',
+    sd_path='/home/yudzheltovskaya/VPD/checkpoints/v1-5-pruned-emaonly.ckpt',
+    class_embedding_path='/home/yudzheltovskaya/VPD/segmentation/class_embeddings.pth',
     neck=dict(
         type='FPN',
         in_channels=[320, 790, 1430, 1280],
